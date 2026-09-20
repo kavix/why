@@ -187,6 +187,17 @@ func DiagnoseTLS(ctx context.Context, host string, port int, opts adapters.Diagn
 					evidence["valid_to"] = cert.NotAfter.Format(time.RFC3339)
 					evidence["dns_sans"] = cert.DNSNames
 					evidence["days_remaining"] = int(time.Until(cert.NotAfter).Hours() / 24)
+
+					// Some platform verifiers report an untrusted issuer before
+					// more specific certificate problems. Inspect the peer
+					// certificate itself so those problems are not misclassified.
+					if time.Now().After(cert.NotAfter) {
+						reason = "Certificate has expired"
+						evidence["tls_issue"] = "CERT_EXPIRED"
+					} else if cert.VerifyHostname(host) != nil {
+						reason = "Hostname mismatch: server certificate does not match requested domain"
+						evidence["tls_issue"] = "HOSTNAME_MISMATCH"
+					}
 				}
 			}
 			unverifiedConn.Close()
