@@ -16,6 +16,17 @@ import (
 	"github.com/kavix/why/internal/adapters"
 )
 
+func TestIsUntrustedCertificateError(t *testing.T) {
+	for _, err := range []string{
+		"x509: certificate signed by unknown authority",
+		"x509: test certificate is not trusted",
+	} {
+		if !isUntrustedCertificateError(err) {
+			t.Errorf("isUntrustedCertificateError(%q) = false, want true", err)
+		}
+	}
+}
+
 func TestDiagnoseTLSIdentifiesCertificateFailures(t *testing.T) {
 	now := time.Now()
 	validForIP := func(ip string) *x509.Certificate {
