@@ -356,15 +356,16 @@ func (a *HTTPAdapter) Diagnose(ctx context.Context, target string, opts adapters
 	}
 
 	httpEvidence := map[string]interface{}{
-		"status_code":   resp.StatusCode,
-		"status":        resp.Status,
-		"proto":         resp.Proto,
-		"content_type":  resp.Header.Get("Content-Type"),
-		"server":        resp.Header.Get("Server"),
-		"body_snippet":  truncateSnippet(bodySnippet, 200),
-		"method":        method,
-		"url":           rawURL,
-		"authorization": req.Header.Get("Authorization") != "",
+		"status_code":           resp.StatusCode,
+		"status":                resp.Status,
+		"proto":                 resp.Proto,
+		"content_type":          resp.Header.Get("Content-Type"),
+		"server":                resp.Header.Get("Server"),
+		"body_snippet":          truncateSnippet(bodySnippet, 200),
+		"method":                method,
+		"url":                   rawURL,
+		"authorization_present": req.Header.Get("Authorization") != "",
+		"request_headers":       sanitizeHeaders(opts.Headers),
 	}
 
 	if resp.Header.Get("WWW-Authenticate") != "" {
@@ -427,4 +428,60 @@ func truncateSnippet(s string, max int) string {
 		return s[:max] + "..."
 	}
 	return s
+}
+
+// redactedMask reemplaza el valor de cualquier header sensible.
+const redactedMask = "****************"
+
+// sensitiveHeaders lista (en minúsculas) los headers cuyo valor nunca debe
+// aparecer en la evidencia, en la salida JSON ni en los logs de CI.
+var sensitiveHeaders = map[string]struct{}{
+	"authorization":       {},
+	"proxy-authorization": {},
+	"cookie":              {},
+	"set-cookie":          {},
+	"x-api-key":           {},
+	"token":               {},
+}
+
+// isSensitiveHeader indica si el nombre de header corresponde a uno sensible,
+// sin distinguir mayúsculas de minúsculas.
+func isSensitiveHeader(name string) bool {
+	_, ok := sensitiveHeaders[strings.ToLower(strings.TrimSpace(name))]
+	return ok
+}
+
+// maskHeaderValue enmascara el valor de un header sensible. En Authorization y
+// Proxy-Authorization conserva el esquema (Bearer, Basic, ...) para que el
+// diagnóstico siga siendo útil sin exponer la credencial.
+func maskHeaderValue(name, value string) string {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	if lower == "authorization" || lower == "proxy-authorization" {
+		if fields := strings.Fields(value); len(fields) >= 2 {
+			return fields[0] + " " + redactedMask
+		}
+	}
+	return redactedMask
+}
+
+// sanitizeHeaders devuelve una copia de los headers en formato "Nombre: valor"
+// con los valores sensibles enmascarados. No modifica el slice original.
+// Las entradas sin ":" no son headers válidos y podrían ser un secreto pegado
+// por error, por lo que se ocultan por completo.
+func sanitizeHeaders(headers []string) []string {
+	out := make([]string, 0, len(headers))
+	for _, h := range headers {
+		parts := strings.SplitN(h, ":", 2)
+		if len(parts) != 2 {
+			out = append(out, redactedMask)
+			continue
+		}
+		name := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		if isSensitiveHeader(name) {
+			value = maskHeaderValue(name, value)
+		}
+		out = append(out, name+": "+value)
+	}
+	return out
 }
