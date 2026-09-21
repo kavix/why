@@ -44,10 +44,14 @@ func (a *SSHAdapter) CanHandle(target string) bool {
 }
 
 type sshTarget struct {
-	User    string
-	Host    string
-	Port    int
-	KeyPath string
+	User           string
+	Host           string
+	Port           int
+	KeyPath        string
+	alias          string
+	fromConfig     bool
+	userFromConfig bool
+	portFromConfig bool
 }
 
 func parseSSHTarget(target string) (*sshTarget, error) {
@@ -65,26 +69,33 @@ func parseSSHTarget(target string) (*sshTarget, error) {
 		Port: 22,
 	}
 
+	explicitUser := false
+	explicitPort := false
+
 	// Extract user if present (user@host)
 	if idx := strings.Index(target, "@"); idx != -1 {
 		st.User = target[:idx]
 		target = target[idx+1:]
+		explicitUser = true
 	}
 
-	// Extract port if present (host:port or host -p port)
+	// Extract port if present (host:port)
 	if strings.Contains(target, ":") {
 		h, p, err := net.SplitHostPort(target)
 		if err == nil {
 			st.Host = h
 			if portInt, err := strconv.Atoi(p); err == nil {
 				st.Port = portInt
+				explicitPort = true
 			}
+			applySSHConfig(st, explicitUser, explicitPort)
 			return st, nil
 		}
 	}
 
 	// Clean trailing slash
 	st.Host = strings.TrimSuffix(target, "/")
+	applySSHConfig(st, explicitUser, explicitPort)
 	return st, nil
 }
 
@@ -112,12 +123,26 @@ func (a *SSHAdapter) Diagnose(ctx context.Context, target string, opts adapters.
 			"port": parsed.Port,
 		},
 	}
+	if parsed.fromConfig {
+		diag.Metadata["ssh_config_alias"] = true
+		diag.Metadata["resolved_hostname"] = parsed.Host
+		if parsed.alias != "" {
+			diag.Metadata["alias"] = parsed.alias
+		}
+	}
 
 	startTotal := time.Now()
 
 	// 1. Local environment & Key check
 	c1Start := time.Now()
 	keysFound, keyEvidence := findLocalSSHKeys(parsed.KeyPath)
+	if parsed.fromConfig {
+		keyEvidence["ssh_config_alias"] = true
+		keyEvidence["resolved_hostname"] = parsed.Host
+		if parsed.alias != "" {
+			keyEvidence["alias"] = parsed.alias
+		}
+	}
 	diag.Checks = append(diag.Checks, model.Check{
 		Name:        "Local SSH Keys & Config",
 		Stage:       "local_env",
