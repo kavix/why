@@ -162,7 +162,7 @@ func DiagnoseTLS(ctx context.Context, host string, port int, opts adapters.Diagn
 		} else if strings.Contains(errStr, "certificate is not valid for any names") || strings.Contains(errStr, "certificate is valid for") {
 			reason = "Hostname mismatch: server certificate does not match requested domain"
 			evidence["tls_issue"] = "HOSTNAME_MISMATCH"
-		} else if strings.Contains(errStr, "unknown authority") || strings.Contains(errStr, "certificate signed by unknown authority") {
+		} else if isUntrustedCertificateError(errStr) {
 			reason = "Untrusted Certificate Authority (Self-signed certificate or missing intermediate CA)"
 			evidence["tls_issue"] = "UNTRUSTED_ROOT_OR_SELF_SIGNED"
 		} else if strings.Contains(errStr, "handshake failure") {
@@ -187,6 +187,17 @@ func DiagnoseTLS(ctx context.Context, host string, port int, opts adapters.Diagn
 					evidence["valid_to"] = cert.NotAfter.Format(time.RFC3339)
 					evidence["dns_sans"] = cert.DNSNames
 					evidence["days_remaining"] = int(time.Until(cert.NotAfter).Hours() / 24)
+
+					// Some platform verifiers report an untrusted issuer before
+					// more specific certificate problems. Inspect the peer
+					// certificate itself so those problems are not misclassified.
+					if time.Now().After(cert.NotAfter) {
+						reason = "Certificate has expired"
+						evidence["tls_issue"] = "CERT_EXPIRED"
+					} else if cert.VerifyHostname(host) != nil {
+						reason = "Hostname mismatch: server certificate does not match requested domain"
+						evidence["tls_issue"] = "HOSTNAME_MISMATCH"
+					}
 				}
 			}
 			unverifiedConn.Close()
@@ -278,6 +289,12 @@ func DiagnoseTLS(ctx context.Context, host string, port int, opts adapters.Diagn
 
 	diag.TotalElapsed = time.Since(startTotal).String()
 	return diag, nil
+}
+
+func isUntrustedCertificateError(err string) bool {
+	return strings.Contains(err, "unknown authority") ||
+		strings.Contains(err, "certificate signed by unknown authority") ||
+		strings.Contains(err, "certificate is not trusted")
 }
 
 func VerifyHostname(cert *x509.Certificate, host string) bool {
