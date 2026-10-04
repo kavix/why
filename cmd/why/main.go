@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kavix/why/internal/adapters"
+	"github.com/kavix/why/internal/completion"
 	"github.com/kavix/why/internal/engine"
 	"github.com/kavix/why/internal/output"
 )
@@ -118,6 +119,10 @@ Options:
 	if len(posArgs) == 0 {
 		fs.Usage()
 		os.Exit(1)
+	}
+
+	if posArgs[0] == "completion" {
+		completion.Completion(posArgs)
 	}
 
 	target := strings.Join(posArgs, " ")

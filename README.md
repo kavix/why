@@ -96,6 +96,26 @@ sudo cp bin/why /usr/local/bin/
 
 ---
 
+### Autocompletion
+
+`why` supports Bash, Zsh, and Fish completion. Make sure `why` is on your `PATH`, then enable it for your shell:
+
+#### Bash (`~/.bashrc`)
+```bash
+source <(why completion bash)
+```
+
+#### Zsh (`~/.zshrc`, after `compinit`)
+```zsh
+source <(why completion zsh)
+```
+
+#### Fish
+```fish
+mkdir -p ~/.config/fish/completions
+why completion fish > ~/.config/fish/completions/why.fish
+```
+
 ## Usage Examples
 
 ### 1. Diagnosing SSH Failures

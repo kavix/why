@@ -20,3 +20,6 @@ coverage.txt
 
 # Go
 vendor/
+
+#nvim
+nvim.log
